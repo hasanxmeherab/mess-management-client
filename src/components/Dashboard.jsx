@@ -204,12 +204,28 @@ const MealEntryTable = ({ messData, userId, isAdmin, currentWeekStart, setCurren
     
     const allMembers = messData?.members || {};
 
-    const membersToDisplay = isAdmin 
-        ? Object.keys(allMembers).sort((a, b) => (allMembers[a]?.name || '').localeCompare(allMembers[b]?.name || ''))
-        : [userId].filter(id => allMembers[id]); 
+    // --- UPDATED LOGIC: Display ALL members for everyone (Manager or not) ---
+    const membersToDisplay = Object.keys(allMembers).sort((a, b) => {
+        // Sort by name for consistent display
+        const nameA = allMembers[a]?.name || '';
+        const nameB = allMembers[b]?.name || '';
+        return nameA.localeCompare(nameB);
+    });
+    // --- END UPDATED LOGIC ---
     
     const currentDate = formatDate(new Date());
     const MEAL_TYPES = ['B', 'L', 'D'];
+
+    // --- ADDED: Color Cycle for alternating day columns ---
+    const COLOR_CYCLE = [
+        'bg-gray-100', // Day 0 (Sun)
+        'bg-white',    // Day 1 (Mon)
+        'bg-gray-100', // Day 2 (Tue)
+        'bg-white',    // Day 3 (Wed)
+        'bg-gray-100', // Day 4 (Thu)
+        'bg-white',    // Day 5 (Fri)
+        'bg-gray-100', // Day 6 (Sat)
+    ];
 
     const navigateWeek = (offset) => {
         const newDate = new Date(currentWeekStart);
@@ -217,10 +233,13 @@ const MealEntryTable = ({ messData, userId, isAdmin, currentWeekStart, setCurren
         setCurrentWeekStart(getStartOfWeek(newDate));
     };
 
-    if (membersToDisplay.length === 0 && !isAdmin) {
+    // Note: The visibility check for non-admin users is now removed here, 
+    // as all members will be in membersToDisplay.
+
+    if (membersToDisplay.length === 0) {
         return (
             <div className="bg-white p-6 rounded-xl shadow-lg mt-6 text-center text-gray-500">
-                Your meal entry will appear here once your account is fully initialized and data is loaded.
+                No members found in this mess. Start by creating an expense or deposit if you are the manager.
             </div>
         );
     }
@@ -244,22 +263,31 @@ const MealEntryTable = ({ messData, userId, isAdmin, currentWeekStart, setCurren
                     <thead className="bg-gray-50">
                         <tr>
                             <th className="sticky left-0 bg-gray-50 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider z-10">Member</th>
-                            {weekDays.map(date => (
-                                <th key={formatDate(date)} colSpan={MEAL_TYPES.length}
-                                    className={`text-center py-3 text-xs font-medium uppercase tracking-wider ${formatDate(date) === currentDate ? 'bg-indigo-100 text-indigo-700 font-bold' : ''}`}>
+                            {/* UPDATED: Apply color cycle and colSpan */}
+                            {weekDays.map((date, i) => (
+                                <th key={formatDate(date)} colSpan={3}
+                                    className={`text-center py-3 text-xs font-medium uppercase tracking-wider 
+                                        ${COLOR_CYCLE[i]} // <--- ADDED: Apply background color from cycle
+                                        ${formatDate(date) === currentDate ? 'bg-indigo-200 text-indigo-800 font-extrabold' : ''}
+                                        border-r border-gray-300`}>
                                     {date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                                 </th>
                             ))}
                         </tr>
                         <tr>
                             <th className="sticky left-0 bg-gray-50"></th>
-                            {weekDays.flatMap(date =>
-                                MEAL_TYPES.map(type => (
-                                    <th key={`${formatDate(date)}_${type}`} className="px-1 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider text-center">
+                            {/* UPDATED: Apply color cycle to B, L, D headers */}
+                            {weekDays.map((date, i) =>
+                                MEAL_TYPES.map((type, index) => (
+                                    <th key={`${formatDate(date)}_${type}`}
+                                        className={`px-1 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider text-center
+                                            ${COLOR_CYCLE[i]} // <--- ADDED: Apply background color from cycle
+                                            ${(index === 2) ? 'border-r border-gray-300' : ''} // Add right border after 'D'
+                                        `}>
                                         {type}
                                     </th>
                                 ))
-                            )}
+                            ).flat()}
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -269,20 +297,25 @@ const MealEntryTable = ({ messData, userId, isAdmin, currentWeekStart, setCurren
                             if (!member) return null;
 
                             const isCurrentUser = memberKey === userId;
-                            // NEW RULE: Only Admin can edit meals
+                            // RETAINED: Only Admin can edit meals
                             const canEdit = isAdmin; 
                             return (
                                 <tr key={memberKey} className={isCurrentUser ? 'bg-indigo-50 hover:bg-indigo-100' : 'hover:bg-gray-50'}>
                                     <td className="sticky left-0 bg-inherit px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900 border-r border-gray-200 z-10">
                                         {member.name} {isCurrentUser && <span className="text-indigo-500 text-xs">(You)</span>}
                                     </td>
-                                    {weekDays.flatMap(date =>
+                                    {/* UPDATED: Apply color cycle to the data cells */}
+                                    {weekDays.map((date, i) =>
                                         MEAL_TYPES.map(type => {
                                             const dateKey = `${formatDate(date)}_${type}`;
                                             const count = member.meals?.[dateKey] || 0;
 
                                             return (
-                                                <td key={dateKey} className="px-1 py-2 whitespace-nowrap text-center text-sm text-gray-700">
+                                                <td key={dateKey} 
+                                                    className={`px-1 py-2 whitespace-nowrap text-center text-sm text-gray-700 
+                                                        ${COLOR_CYCLE[i]} // <--- ADDED: Apply background color from cycle
+                                                        ${type === 'D' ? 'border-r border-gray-300' : ''} // Add right border after 'D'
+                                                    `}>
                                                     <input
                                                         type="number"
                                                         min="0"
@@ -296,15 +329,12 @@ const MealEntryTable = ({ messData, userId, isAdmin, currentWeekStart, setCurren
                                                 </td>
                                             );
                                         })
-                                    )}
+                                    ).flat()}
                                 </tr>
                             );
                         })}
                     </tbody>
                 </table>
-                {!membersToDisplay.length && (
-                    <p className="text-center py-4 text-gray-500">No members found in this mess.</p>
-                )}
             </div>
         </div>
     );
