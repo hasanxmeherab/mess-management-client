@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { setDoc, runTransaction, getDoc } from 'firebase/firestore';
-// MODIFIED: Import helpers from the new utils file
-import { generateMessId, generateJoinKey } from '../utils/dateHelpers'; 
+import { generateMessId, generateJoinKey } from '../hooks/useMessManager'; 
 
 const initialMessData = {
     name: 'New Mess',
@@ -199,4 +198,4 @@ const MessChooser = ({ db, userId, userName, setCurrentMessId, getMessRef, getMe
     );
 };
 
-export default MessChooser; 
+export default MessChooser;

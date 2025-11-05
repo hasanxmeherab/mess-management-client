@@ -3,13 +3,6 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signOut, updateProfile, signInWithCustomToken } from 'firebase/auth'; 
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, runTransaction, updateDoc } from 'firebase/firestore';
 
-import { 
-    generateUniqueId, 
-    getStartOfMonth, // NEW: Import monthly helper
-    // Note: generateMessId, generateJoinKey, copyToClipboard are now imported 
-    // in components/MessChooser and components/Dashboard where they are used.
-} from '../utils/dateHelpers.js'; 
-
 // --- Global Configuration (Replace with your actual values locally) ---
 const appId = 'local-mess-app';
 const firebaseConfig = {
@@ -28,6 +21,31 @@ const initialMessData = {
     expenses: [],
     adminUid: '',
     joinKey: '',
+};
+
+// --- HELPER FUNCTIONS (RETAINED IN THIS FILE) ---
+
+/** Generates a unique 8-character ID for the mess. */
+export const generateMessId = () => {
+    return Math.random().toString(36).substring(2, 10).toUpperCase();
+};
+
+/** Generates a simple 6-digit join key. */
+export const generateJoinKey = () => {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+/** Generates a simple, short unique ID for expenses, etc. (FIX for crypto.randomUUID) */
+export const generateUniqueId = () => {
+    return Math.random().toString(36).substring(2, 9);
+};
+
+/** Calculates the start of the month (YYYY-MM-01 00:00:00). */
+export const getStartOfMonth = (date) => {
+    const d = new Date(date);
+    d.setDate(1); // Set to the first day of the month
+    d.setHours(0, 0, 0, 0);
+    return d;
 };
 
 
@@ -58,7 +76,6 @@ export const useMessManager = () => {
 
     // Derived State
     const userId = user?.uid;
-    // Use displayName if available, otherwise fallback to email prefix
     const userName = user?.displayName || user?.email?.split('@')[0] || (userId ? `User ${userId.substring(0, 4)}` : 'Unknown');
     const isAdmin = userId && messData.adminUid === userId;
     const currentMessName = messData.name || 'Mess Dashboard';
@@ -84,8 +101,6 @@ export const useMessManager = () => {
         const docRef = getMessRef(messId);
         if (!docRef) return;
         
-        // Use user's displayName (set during signup) or email prefix as default
-        // Access 'user' state which is guaranteed to be set if this runs after successful auth
         const defaultName = user?.displayName || email?.split('@')[0] || `User ${uid.substring(0, 4)}`; 
 
         try {
@@ -93,7 +108,6 @@ export const useMessManager = () => {
                 const messDoc = await transaction.get(docRef);
                 const currentData = messDoc.exists() ? messDoc.data() : initialMessData;
                 
-                // If the mess doesn't have an admin, the person joining first becomes admin (Self-bootstrap)
                 if (!currentData.adminUid) {
                     currentData.adminUid = uid;
                 }
@@ -126,7 +140,6 @@ export const useMessManager = () => {
                 if (authUser) {
                     setUser(authUser);
                     
-                    // Attempt to fetch saved mess ID for automatic dashboard entry
                     const mappingRef = getMessMappingRef(authUser.uid);
                     if (mappingRef) {
                         try {
@@ -134,7 +147,6 @@ export const useMessManager = () => {
                             if (mapSnap.exists() && mapSnap.data().messId) {
                                 const savedMessId = mapSnap.data().messId;
                                 setCurrentMessId(savedMessId);
-                                // The initialization logic here relies on the global user state being set right above this block
                                 await initializeMember(authUser.uid, authUser.email, savedMessId); 
                             }
                         } catch (e) {
@@ -197,9 +209,8 @@ export const useMessManager = () => {
         nextMonthStart.setMonth(nextMonthStart.getMonth() + 1);
         const monthEnd = nextMonthStart.getTime();
 
-        // --- EXPENSE FILTERING ---
+        // --- EXPENSE FILTERING (Monthly) ---
         const monthlyExpenses = messData.expenses.filter(expense => {
-            // Check if the expense date is within the current month bounds
             return expense.date >= monthStart && expense.date < monthEnd;
         });
 
@@ -207,12 +218,11 @@ export const useMessManager = () => {
             totalExpenses += expense.amount || 0;
         });
 
-        // --- MEAL FILTERING & COUNTING ---
+        // --- MEAL FILTERING & COUNTING (Monthly) ---
         Object.keys(messData.members).forEach(memberId => {
             const member = messData.members[memberId];
             let memberMeals = 0;
 
-            // Only sum meals that belong to the current month
             if (member.meals) {
                 Object.keys(member.meals).forEach(dateKey => {
                     // dateKey format: YYYY-MM-DD_B
@@ -225,19 +235,19 @@ export const useMessManager = () => {
                 });
             }
             
-            // Deposits are generally cumulative, but we keep the current total deposit for member's current balance
+            // Total deposits are cumulative
             const deposit = member.deposit || 0;
             totalDeposited += deposit;
 
             totalMeals += memberMeals;
             memberSummaries[member.name] = { 
                 totalMeals: memberMeals, 
-                deposit: deposit, // This is the total running deposit
+                deposit: deposit, 
                 balance: 0 
             };
         });
         
-        const availableAmount = totalDeposited - totalExpenses; // Note: This calculation is now misleading as deposit is cumulative, but expenses are monthly. For a truly accurate monthly view, deposits should also be filtered or a separate "Monthly Deposit" field should be used. For simplicity, we keep running deposit for now.
+        const availableAmount = totalDeposited - totalExpenses; 
 
         const ratePerMeal = totalMeals > 0 ? (totalExpenses / totalMeals) : 0;
         const formattedRate = ratePerMeal.toFixed(2);
@@ -246,30 +256,27 @@ export const useMessManager = () => {
             const summary = memberSummaries[name];
             const expenseShare = summary.totalMeals * ratePerMeal;
             
-            // Balance calculation: Total Expense Share - Member's Total Deposit
-            // A positive balance means the member OWES money (share > deposit)
-            // A negative balance means the member has CREDIT (deposit > share)
+            // Balance calculation: Monthly Expense Share - Member's Cumulative Deposit
             summary.balance = expenseShare - summary.deposit; 
         });
 
         return {
             totalMeals: totalMeals,
-            totalExpenses: totalExpenses, // Total expenses in the CURRENT MONTH
-            totalDeposited: totalDeposited, // Total cumulative deposits
-            availableAmount: availableAmount, // Cumulative deposit - monthly expenses
-            ratePerMeal: formattedRate, // Calculated based on monthly expenses and monthly meals
-            memberSummaries: memberSummaries, // Balances calculated using monthly meals/expenses vs. cumulative deposit
-            monthlyExpenses: monthlyExpenses // NEW: Export the filtered expenses for history display
+            totalExpenses: totalExpenses,
+            totalDeposited: totalDeposited, 
+            availableAmount: availableAmount, 
+            ratePerMeal: formattedRate, 
+            memberSummaries: memberSummaries, 
+            monthlyExpenses: monthlyExpenses 
         };
-    }, [messData, currentMonthStart]); // Dependency added for recalculation when month changes
+    }, [messData, currentMonthStart]); 
 
 
     // --- 4. DATA MUTATION FUNCTIONS ---
-    // (No change needed here, they continue to update the centralized Firestore object)
+    
     const updateMealCount = useCallback(async (uid, dateKey, newCount) => {
         if (!db || !userId || !currentMessId) return;
 
-        // **STRICT ADMIN-ONLY MEAL ENTRY SECURITY CHECK**
         if (!isAdmin) {
             console.warn("Permission Denied: Only Admin can update meal counts.");
             return; 
@@ -360,8 +367,8 @@ export const useMessManager = () => {
         calculatedSummary,
         currentMessName,
         currentJoinKey,
-        currentMonthStart, // MODIFIED
-        setCurrentMonthStart, // MODIFIED
+        currentMonthStart, 
+        setCurrentMonthStart, 
         updateMealCount,
         expenseModalOpen,
         setExpenseModalOpen,
