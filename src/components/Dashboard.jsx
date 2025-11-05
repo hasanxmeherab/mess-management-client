@@ -218,13 +218,13 @@ const MealEntryTable = ({ messData, userId, isAdmin, currentWeekStart, setCurren
 
     // --- ADDED: Color Cycle for alternating day columns ---
     const COLOR_CYCLE = [
-        'bg-gray-100', // Day 0 (Sun)
-        'bg-white',    // Day 1 (Mon)
-        'bg-gray-100', // Day 2 (Tue)
-        'bg-white',    // Day 3 (Wed)
-        'bg-gray-100', // Day 4 (Thu)
-        'bg-white',    // Day 5 (Fri)
-        'bg-gray-100', // Day 6 (Sat)
+        'bg-[#40E0D0]', // Day 0 (Sun)
+        'bg-[#7FFFD4]',    // Day 1 (Mon)
+        'bg-[#40E0D0]', // Day 2 (Tue)
+        'bg-[#7FFFD4]',    // Day 3 (Wed)
+        'bg-[#40E0D0]', // Day 4 (Thu)
+        'bg-[#7FFFD4]',    // Day 5 (Fri)
+        'bg-[#40E0D0]', // Day 6 (Sat)
     ];
 
     const navigateWeek = (offset) => {
@@ -252,7 +252,7 @@ const MealEntryTable = ({ messData, userId, isAdmin, currentWeekStart, setCurren
                     <button onClick={() => navigateWeek(-7)} className="p-2 bg-indigo-500 text-white rounded-full hover:bg-indigo-600 transition">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
                     </button>
-                    <button onClick={() => setCurrentWeekStart(getStartOfWeek(new Date()))} className="px-4 py-1 text-sm bg-gray-200 rounded-full hover:bg-gray-300 transition">Today's Week</button>
+                    <button onClick={() => setCurrentWeekStart(getStartOfWeek(new Date()))} className="px-4 py-1 text-sm bg-gray-200 rounded-full hover:bg-gray-300 transition">This Week</button>
                     <button onClick={() => navigateWeek(7)} className="p-2 bg-indigo-500 text-white rounded-full hover:bg-indigo-600 transition">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
                     </button>
