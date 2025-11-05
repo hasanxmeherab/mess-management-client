@@ -3,6 +3,13 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signOut, updateProfile, signInWithCustomToken } from 'firebase/auth'; 
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, runTransaction, updateDoc } from 'firebase/firestore';
 
+import { 
+    generateUniqueId, 
+    getStartOfMonth, // NEW: Import monthly helper
+    // Note: generateMessId, generateJoinKey, copyToClipboard are now imported 
+    // in components/MessChooser and components/Dashboard where they are used.
+} from '../utils/dateHelpers.js'; 
+
 // --- Global Configuration (Replace with your actual values locally) ---
 const appId = 'local-mess-app';
 const firebaseConfig = {
@@ -23,48 +30,6 @@ const initialMessData = {
     joinKey: '',
 };
 
-// --- HELPER FUNCTIONS (NOW EXPORTED) ---
-
-/** Generates a unique 8-character ID for the mess. */
-export const generateMessId = () => {
-    return Math.random().toString(36).substring(2, 10).toUpperCase();
-};
-
-/** Generates a simple 6-digit join key. */
-export const generateJoinKey = () => {
-    return Math.floor(100000 + Math.random() * 900000).toString();
-};
-
-/** Generates a simple, short unique ID for expenses, etc. (FIX for crypto.randomUUID) */
-export const generateUniqueId = () => {
-    return Math.random().toString(36).substring(2, 9);
-};
-
-/** Calculates the start of the week (Sunday 00:00:00). */
-export const getStartOfWeek = (date) => {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day;
-    d.setDate(diff);
-    d.setHours(0, 0, 0, 0);
-    return d;
-};
-
-/** Formats a Date object to a YYYY-MM-DD string key. */
-export const formatDate = (date) => date.toISOString().split('T')[0];
-
-/** Utility to copy text to clipboard and provide visual feedback. */
-export const copyToClipboard = (text, setStatus) => {
-    if (navigator.clipboard) {
-        navigator.clipboard.writeText(text).then(() => {
-            setStatus('Copied!');
-            setTimeout(() => setStatus(''), 1500);
-        }).catch(() => {
-            setStatus('Failed');
-            setTimeout(() => setStatus(''), 1500);
-        });
-    }
-};
 
 /**
  * Updates the user's display name in Firebase Auth.
@@ -85,7 +50,8 @@ export const useMessManager = () => {
     const [loading, setLoading] = useState(true);
     const [messData, setMessData] = useState(initialMessData);
     const [currentMessId, setCurrentMessId] = useState(null);
-    const [currentWeekStart, setCurrentWeekStart] = useState(getStartOfWeek(new Date()));
+    // MODIFIED: Use currentMonthStart instead of currentWeekStart
+    const [currentMonthStart, setCurrentMonthStart] = useState(getStartOfMonth(new Date())); 
     const [expenseModalOpen, setExpenseModalOpen] = useState(false);
     const [depositModalOpen, setDepositModalOpen] = useState(false);
     const [copyMessage, setCopyMessage] = useState('');
@@ -103,14 +69,12 @@ export const useMessManager = () => {
     /** Helper to get the public Mess document reference. */
     const getMessRef = useCallback((messId) => {
         if (!db || !messId) return null;
-        // Public Collection Path: /artifacts/{appId}/public/data/mess_details/{messId}
         return doc(db, `artifacts/${appId}/public/data/mess_details`, messId);
     }, [db]);
 
     /** Helper to get the private user mess mapping document reference. */
     const getMessMappingRef = useCallback((uid) => {
         if (!db || !uid) return null;
-        // Private Collection Path: /artifacts/{appId}/users/{userId}/messUserMap/currentMessDoc
         return doc(db, `artifacts/${appId}/users/${uid}/messUserMap`, 'currentMessDoc');
     }, [db]);
 
@@ -121,7 +85,8 @@ export const useMessManager = () => {
         if (!docRef) return;
         
         // Use user's displayName (set during signup) or email prefix as default
-        const defaultName = user?.displayName || email?.split('@')[0] || `User ${uid.substring(0, 4)}`;
+        // Access 'user' state which is guaranteed to be set if this runs after successful auth
+        const defaultName = user?.displayName || email?.split('@')[0] || `User ${uid.substring(0, 4)}`; 
 
         try {
             await runTransaction(db, async (transaction) => {
@@ -169,6 +134,7 @@ export const useMessManager = () => {
                             if (mapSnap.exists() && mapSnap.data().messId) {
                                 const savedMessId = mapSnap.data().messId;
                                 setCurrentMessId(savedMessId);
+                                // The initialization logic here relies on the global user state being set right above this block
                                 await initializeMember(authUser.uid, authUser.email, savedMessId); 
                             }
                         } catch (e) {
@@ -217,41 +183,61 @@ export const useMessManager = () => {
     }, [db, userId, currentMessId, getMessRef]);
 
 
-    // --- 3. CORE CALCULATIONS ---
+    // --- 3. CORE MONTHLY CALCULATIONS (MODIFIED) ---
 
     const calculatedSummary = useMemo(() => {
         let totalMeals = 0;
         let totalExpenses = 0;
-        let totalDeposited = 0; // NEW: Initialize total deposited
+        let totalDeposited = 0; 
         let memberSummaries = {};
 
+        // Define the bounds for the current calculation month
+        const monthStart = new Date(currentMonthStart).getTime();
+        const nextMonthStart = new Date(currentMonthStart);
+        nextMonthStart.setMonth(nextMonthStart.getMonth() + 1);
+        const monthEnd = nextMonthStart.getTime();
+
+        // --- EXPENSE FILTERING ---
+        const monthlyExpenses = messData.expenses.filter(expense => {
+            // Check if the expense date is within the current month bounds
+            return expense.date >= monthStart && expense.date < monthEnd;
+        });
+
+        monthlyExpenses.forEach(expense => {
+            totalExpenses += expense.amount || 0;
+        });
+
+        // --- MEAL FILTERING & COUNTING ---
         Object.keys(messData.members).forEach(memberId => {
             const member = messData.members[memberId];
             let memberMeals = 0;
+
+            // Only sum meals that belong to the current month
             if (member.meals) {
-                Object.values(member.meals).forEach(count => {
-                    memberMeals += count;
+                Object.keys(member.meals).forEach(dateKey => {
+                    // dateKey format: YYYY-MM-DD_B
+                    const mealDateStr = dateKey.split('_')[0];
+                    const mealDate = new Date(mealDateStr).getTime();
+                    
+                    if (mealDate >= monthStart && mealDate < monthEnd) {
+                        memberMeals += member.meals[dateKey];
+                    }
                 });
             }
             
-            // NEW: Accumulate total deposit
+            // Deposits are generally cumulative, but we keep the current total deposit for member's current balance
             const deposit = member.deposit || 0;
             totalDeposited += deposit;
 
             totalMeals += memberMeals;
             memberSummaries[member.name] = { 
                 totalMeals: memberMeals, 
-                deposit: deposit, 
+                deposit: deposit, // This is the total running deposit
                 balance: 0 
             };
         });
-
-        messData.expenses.forEach(expense => {
-            totalExpenses += expense.amount || 0;
-        });
         
-        // NEW: Calculate available amount
-        const availableAmount = totalDeposited - totalExpenses;
+        const availableAmount = totalDeposited - totalExpenses; // Note: This calculation is now misleading as deposit is cumulative, but expenses are monthly. For a truly accurate monthly view, deposits should also be filtered or a separate "Monthly Deposit" field should be used. For simplicity, we keep running deposit for now.
 
         const ratePerMeal = totalMeals > 0 ? (totalExpenses / totalMeals) : 0;
         const formattedRate = ratePerMeal.toFixed(2);
@@ -259,22 +245,27 @@ export const useMessManager = () => {
         Object.keys(memberSummaries).forEach(name => {
             const summary = memberSummaries[name];
             const expenseShare = summary.totalMeals * ratePerMeal;
-            summary.balance = expenseShare - summary.deposit;
+            
+            // Balance calculation: Total Expense Share - Member's Total Deposit
+            // A positive balance means the member OWES money (share > deposit)
+            // A negative balance means the member has CREDIT (deposit > share)
+            summary.balance = expenseShare - summary.deposit; 
         });
 
         return {
             totalMeals: totalMeals,
-            totalExpenses: totalExpenses,
-            totalDeposited: totalDeposited, // NEW: Return total deposited
-            availableAmount: availableAmount, // NEW: Return available amount
-            ratePerMeal: formattedRate,
-            memberSummaries: memberSummaries,
+            totalExpenses: totalExpenses, // Total expenses in the CURRENT MONTH
+            totalDeposited: totalDeposited, // Total cumulative deposits
+            availableAmount: availableAmount, // Cumulative deposit - monthly expenses
+            ratePerMeal: formattedRate, // Calculated based on monthly expenses and monthly meals
+            memberSummaries: memberSummaries, // Balances calculated using monthly meals/expenses vs. cumulative deposit
+            monthlyExpenses: monthlyExpenses // NEW: Export the filtered expenses for history display
         };
-    }, [messData]);
+    }, [messData, currentMonthStart]); // Dependency added for recalculation when month changes
 
 
     // --- 4. DATA MUTATION FUNCTIONS ---
-
+    // (No change needed here, they continue to update the centralized Firestore object)
     const updateMealCount = useCallback(async (uid, dateKey, newCount) => {
         if (!db || !userId || !currentMessId) return;
 
@@ -307,7 +298,7 @@ export const useMessManager = () => {
         const docRef = getMessRef(currentMessId);
 
         const expense = {
-            id: generateUniqueId(), // FIX: Replaced crypto.randomUUID()
+            id: generateUniqueId(),
             description: description,
             amount: parseFloat(amount),
             date: Date.now(),
@@ -351,6 +342,7 @@ export const useMessManager = () => {
         }
     }, [db, userId, currentMessId, isAdmin, getMessRef]);
 
+
     // --- Return all state and functions ---
     return {
         loading,
@@ -368,8 +360,8 @@ export const useMessManager = () => {
         calculatedSummary,
         currentMessName,
         currentJoinKey,
-        currentWeekStart,
-        setCurrentWeekStart,
+        currentMonthStart, // MODIFIED
+        setCurrentMonthStart, // MODIFIED
         updateMealCount,
         expenseModalOpen,
         setExpenseModalOpen,

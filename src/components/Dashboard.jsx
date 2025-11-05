@@ -1,46 +1,10 @@
-import React, { useState } from 'react';
-
-// --- HELPER FUNCTIONS (SELF-CONTAINED) ---
-
-/** Calculates the start of the week (Sunday 00:00:00). */
-const getStartOfWeek = (date) => {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day;
-    d.setDate(diff);
-    d.setHours(0, 0, 0, 0);
-    return d;
-};
-
-/** Formats a Date object to a YYYY-MM-DD string key. */
-const formatDate = (date) => date.toISOString().split('T')[0];
-
-/** Utility to copy text to clipboard and provide visual feedback. */
-const copyToClipboard = (text, setStatus) => {
-    if (navigator.clipboard) {
-        navigator.clipboard.writeText(text).then(() => {
-            setStatus('Copied!');
-            setTimeout(() => setStatus(''), 1500);
-        }).catch(() => {
-            // Fallback for environments where clipboard API is restricted (like iframes)
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            textarea.style.position = 'fixed'; // Avoid scrolling to bottom
-            document.body.appendChild(textarea);
-            textarea.focus();
-            textarea.select();
-            try {
-                document.execCommand('copy');
-                setStatus('Copied!');
-                setTimeout(() => setStatus(''), 1500);
-            } catch (err) {
-                setStatus('Failed to copy');
-                setTimeout(() => setStatus(''), 1500);
-            }
-            document.body.removeChild(textarea);
-        });
-    }
-};
+import React, { useState, useMemo } from 'react';
+// MODIFIED: Import necessary helpers from the new utils file
+import { 
+    copyToClipboard, 
+    formatDate, 
+    getStartOfMonth 
+} from '../utils/dateHelpers'; 
 
 // --- Shared UI components ---
 
@@ -191,50 +155,49 @@ const DepositModal = ({ depositModalOpen, setDepositModalOpen, addDeposit, messD
     );
 };
 
-const MealEntryTable = ({ messData, userId, isAdmin, currentWeekStart, setCurrentWeekStart, updateMealCount }) => {
-    const weekDays = (() => {
+// MODIFIED: Renamed and updated for MONTHLY view
+const MealEntryTable = ({ messData, userId, isAdmin, currentMonthStart, setCurrentMonthStart, updateMealCount }) => {
+    
+    // NEW: Calculate all days in the current month
+    const daysInMonth = useMemo(() => {
         const days = [];
-        let current = new Date(currentWeekStart);
-        for (let i = 0; i < 7; i++) {
-            days.push(new Date(current));
-            current.setDate(current.getDate() + 1);
+        const current = new Date(currentMonthStart);
+        // Date trick: Setting day 0 of the next month gives you the last day of the current month
+        const lastDay = new Date(current.getFullYear(), current.getMonth() + 1, 0).getDate(); 
+        
+        for (let i = 1; i <= lastDay; i++) {
+            const date = new Date(current.getFullYear(), current.getMonth(), i);
+            days.push(date);
         }
         return days;
-    })();
+    }, [currentMonthStart]);
     
     const allMembers = messData?.members || {};
 
-    // --- UPDATED LOGIC: Display ALL members for everyone (Manager or not) ---
     const membersToDisplay = Object.keys(allMembers).sort((a, b) => {
-        // Sort by name for consistent display
         const nameA = allMembers[a]?.name || '';
         const nameB = allMembers[b]?.name || '';
         return nameA.localeCompare(nameB);
     });
-    // --- END UPDATED LOGIC ---
     
-    const currentDate = formatDate(new Date());
+    const currentDateStr = formatDate(new Date());
     const MEAL_TYPES = ['B', 'L', 'D'];
 
     // --- ADDED: Color Cycle for alternating day columns ---
     const COLOR_CYCLE = [
-        'bg-[#40E0D0]', // Day 0 (Sun)
-        'bg-[#7FFFD4]',    // Day 1 (Mon)
-        'bg-[#40E0D0]', // Day 2 (Tue)
-        'bg-[#7FFFD4]',    // Day 3 (Wed)
-        'bg-[#40E0D0]', // Day 4 (Thu)
-        'bg-[#7FFFD4]',    // Day 5 (Fri)
-        'bg-[#40E0D0]', // Day 6 (Sat)
+        'bg-teal-100', // for Mon
+        'bg-teal-50',  // for Tue
     ];
-
-    const navigateWeek = (offset) => {
-        const newDate = new Date(currentWeekStart);
-        newDate.setDate(newDate.getDate() + offset);
-        setCurrentWeekStart(getStartOfWeek(newDate));
+    
+    const navigateMonth = (offset) => {
+        const newDate = new Date(currentMonthStart);
+        newDate.setMonth(newDate.getMonth() + offset);
+        // Important: Use getStartOfMonth to reset the date to the first day 
+        setCurrentMonthStart(getStartOfMonth(newDate)); 
     };
-
-    // Note: The visibility check for non-admin users is now removed here, 
-    // as all members will be in membersToDisplay.
+    
+    // Header for the Month
+    const monthHeader = currentMonthStart.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
 
     if (membersToDisplay.length === 0) {
         return (
@@ -247,42 +210,51 @@ const MealEntryTable = ({ messData, userId, isAdmin, currentWeekStart, setCurren
     return (
         <div className="bg-white p-4 rounded-xl shadow-lg mt-6">
             <h2 className="text-2xl font-bold text-gray-800 mb-4 flex justify-between items-center">
-                Weekly Meal Entry {isAdmin ? '' : <span className="text-sm text-gray-500 font-normal">(View Only)</span>}
-            <div className="flex space-x-2">
-                    <button onClick={() => navigateWeek(-7)} className="p-2 bg-indigo-500 text-white rounded-full hover:bg-indigo-600 transition">
+                Monthly Meal Register: {monthHeader} {isAdmin ? '' : <span className="text-sm text-gray-500 font-normal">(View Only)</span>}
+                <div className="flex space-x-2">
+                    <button onClick={() => navigateMonth(-1)} className="p-2 bg-indigo-500 text-white rounded-full hover:bg-indigo-600 transition">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
                     </button>
-                    <button onClick={() => setCurrentWeekStart(getStartOfWeek(new Date()))} className="px-4 py-1 text-sm bg-gray-200 rounded-full hover:bg-gray-300 transition">This Week</button>
-                    <button onClick={() => navigateWeek(7)} className="p-2 bg-indigo-500 text-white rounded-full hover:bg-indigo-600 transition">
+                    <button onClick={() => setCurrentMonthStart(getStartOfMonth(new Date()))} className="px-4 py-1 text-sm bg-gray-200 rounded-full hover:bg-gray-300 transition">This Month</button>
+                    <button onClick={() => navigateMonth(1)} className="p-2 bg-indigo-500 text-white rounded-full hover:bg-indigo-600 transition">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
                     </button>
                 </div>
             </h2>
             <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                <table className="min-w-full divide-y divide-gray-200 border-collapse">
+                    <thead className="bg-gray-50 sticky top-0 z-20">
                         <tr>
-                            <th className="sticky left-0 bg-gray-50 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider z-10">Member</th>
-                            {/* UPDATED: Apply color cycle and colSpan */}
-                            {weekDays.map((date, i) => (
-                                <th key={formatDate(date)} colSpan={3}
-                                    className={`text-center py-3 text-xs font-medium uppercase tracking-wider 
-                                        ${COLOR_CYCLE[i]} // <--- ADDED: Apply background color from cycle
-                                        ${formatDate(date) === currentDate ? 'bg-indigo-200 text-indigo-800 font-extrabold' : ''}
-                                        border-r border-gray-300`}>
-                                    {date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                                </th>
-                            ))}
+                            <th className="sticky left-0 bg-gray-50 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider z-30 min-w-[120px] border-r border-gray-300">Member</th>
+                            {/* UPDATED: Iterate through all days in the month */}
+                            {daysInMonth.map((date, i) => {
+                                const dateStr = formatDate(date);
+                                const isToday = dateStr === currentDateStr;
+                                const colorIndex = date.getDay() % 2; // 0=Sun, 1=Mon, etc. (using simple alternating color for now)
+                                
+                                return (
+                                    <th key={dateStr} colSpan={3}
+                                        className={`text-center py-3 text-xs font-medium uppercase tracking-wider 
+                                            ${COLOR_CYCLE[i % 2]} 
+                                            ${isToday ? 'bg-indigo-200 text-indigo-800 font-extrabold' : ''}
+                                            border-r border-gray-300`}>
+                                        <div className='flex flex-col items-center justify-center'>
+                                            <span className="font-extrabold text-sm">{date.getDate()}</span>
+                                            <span className="font-normal text-xs text-gray-600">{date.toLocaleDateString('en-US', { weekday: 'short' })}</span>
+                                        </div>
+                                    </th>
+                                );
+                            })}
                         </tr>
                         <tr>
-                            <th className="sticky left-0 bg-gray-50"></th>
-                            {/* UPDATED: Apply color cycle to B, L, D headers */}
-                            {weekDays.map((date, i) =>
+                            <th className="sticky left-0 bg-gray-50 border-r border-gray-300 z-30"></th>
+                            {/* UPDATED: B, L, D headers for all days */}
+                            {daysInMonth.map((date, i) =>
                                 MEAL_TYPES.map((type, index) => (
                                     <th key={`${formatDate(date)}_${type}`}
                                         className={`px-1 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider text-center
-                                            ${COLOR_CYCLE[i]} // <--- ADDED: Apply background color from cycle
-                                            ${(index === 2) ? 'border-r border-gray-300' : ''} // Add right border after 'D'
+                                            ${COLOR_CYCLE[i % 2]}
+                                            ${(index === 2) ? 'border-r border-gray-300' : ''} 
                                         `}>
                                         {type}
                                     </th>
@@ -297,15 +269,14 @@ const MealEntryTable = ({ messData, userId, isAdmin, currentWeekStart, setCurren
                             if (!member) return null;
 
                             const isCurrentUser = memberKey === userId;
-                            // RETAINED: Only Admin can edit meals
                             const canEdit = isAdmin; 
                             return (
                                 <tr key={memberKey} className={isCurrentUser ? 'bg-indigo-50 hover:bg-indigo-100' : 'hover:bg-gray-50'}>
                                     <td className="sticky left-0 bg-inherit px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900 border-r border-gray-200 z-10">
                                         {member.name} {isCurrentUser && <span className="text-indigo-500 text-xs">(You)</span>}
                                     </td>
-                                    {/* UPDATED: Apply color cycle to the data cells */}
-                                    {weekDays.map((date, i) =>
+                                    {/* UPDATED: Data cells for all days */}
+                                    {daysInMonth.map((date, i) =>
                                         MEAL_TYPES.map(type => {
                                             const dateKey = `${formatDate(date)}_${type}`;
                                             const count = member.meals?.[dateKey] || 0;
@@ -313,8 +284,8 @@ const MealEntryTable = ({ messData, userId, isAdmin, currentWeekStart, setCurren
                                             return (
                                                 <td key={dateKey} 
                                                     className={`px-1 py-2 whitespace-nowrap text-center text-sm text-gray-700 
-                                                        ${COLOR_CYCLE[i]} // <--- ADDED: Apply background color from cycle
-                                                        ${type === 'D' ? 'border-r border-gray-300' : ''} // Add right border after 'D'
+                                                        ${COLOR_CYCLE[i % 2]}
+                                                        ${type === 'D' ? 'border-r border-gray-300' : ''} 
                                                     `}>
                                                     <input
                                                         type="number"
@@ -322,7 +293,6 @@ const MealEntryTable = ({ messData, userId, isAdmin, currentWeekStart, setCurren
                                                         max="1"
                                                         value={count}
                                                         onChange={(e) => updateMealCount(memberKey, dateKey, e.target.value)}
-                                                        // Disabled unless isAdmin is true
                                                         disabled={!canEdit} 
                                                         className={`w-10 h-8 text-center border-2 rounded-lg transition ${canEdit ? 'border-indigo-400 focus:border-indigo-600' : 'border-gray-300 focus:border-gray-500 bg-gray-100 cursor-not-allowed'}`}
                                                     />
@@ -343,27 +313,27 @@ const MealEntryTable = ({ messData, userId, isAdmin, currentWeekStart, setCurren
 
 /** Main Component */
 const Dashboard = ({ 
-    state // FIX: Expects the single 'state' prop from App.jsx
+    state
 }) => {
     
-    // FIX: Destructure all needed props from the state object.
     const { 
         auth, signOut, userId, userName, messData, isAdmin, calculatedSummary, 
-        currentMessName, currentJoinKey, currentWeekStart, setCurrentWeekStart, 
+        currentMessName, currentJoinKey, currentMonthStart, setCurrentMonthStart, // MODIFIED
         updateMealCount, expenseModalOpen, setExpenseModalOpen, addExpense,
         depositModalOpen, setDepositModalOpen, addDeposit, setCopyMessage,
-        currentMessId, // FIX: Resolves "currentMessId is not defined"
-        setCurrentMessId // FIX: Ensures 'Change Mess' and Sign Out buttons work
+        currentMessId,
+        setCurrentMessId
     } = state;
     
-    // Default the summary values to zero if calculatedSummary is undefined (during initial load)
+    // Default the summary values to zero if calculatedSummary is undefined 
     const summary = calculatedSummary || { 
         totalExpenses: 0, 
         totalMeals: 0, 
         ratePerMeal: '0.00',
-        totalDeposited: 0, // ADDED for safety
-        availableAmount: 0, // ADDED for safety
-        memberSummaries: {} 
+        totalDeposited: 0, 
+        availableAmount: 0, 
+        memberSummaries: {},
+        monthlyExpenses: [] // NEW: Default for monthly expenses
     };
 
     // --- Main Dashboard Render ---
@@ -408,28 +378,28 @@ const Dashboard = ({
                 {/* Global Summary Panel and Meal Entry */}
                 <div className="lg:col-span-2 space-y-6">
                     <div className="bg-white p-5 rounded-xl shadow-lg">
-                        <h2 className="text-2xl font-bold text-gray-800 mb-4">Global Summary</h2>
+                        <h2 className="text-2xl font-bold text-gray-800 mb-4">Monthly Summary</h2> {/* MODIFIED TITLE */}
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                             
-                            {/* 1. Total Expenses */}
+                            {/* 1. Total Expenses (Monthly) */}
                             <div className="bg-red-50 p-3 rounded-lg">
-                                <p className="text-xs font-medium text-gray-500">Total Expenses</p>
+                                <p className="text-xs font-medium text-gray-500">Monthly Expenses</p> {/* MODIFIED LABEL */}
                                 <p className="text-xl font-bold text-red-700">Tk {summary.totalExpenses.toFixed(2)}</p>
                             </div>
                             
-                            {/* 2. Total Meals */}
+                            {/* 2. Total Meals (Monthly) */}
                             <div className="bg-indigo-50 p-3 rounded-lg">
-                                <p className="text-xs font-medium text-gray-500">Total Meals</p>
+                                <p className="text-xs font-medium text-gray-500">Monthly Meals</p> {/* MODIFIED LABEL */}
                                 <p className="text-xl font-bold text-indigo-700">{summary.totalMeals}</p>
                             </div>
                             
-                            {/* 3. Total Deposits (NEW) */}
+                            {/* 3. Total Deposits (Cumulative) */}
                             <div className="bg-green-50 p-3 rounded-lg">
-                                <p className="text-xs font-medium text-gray-500">Total Deposits</p>
+                                <p className="text-xs font-medium text-gray-500">Total Deposits (Cumulative)</p> {/* CLARIFIED LABEL */}
                                 <p className="text-xl font-bold text-green-700">Tk {summary.totalDeposited.toFixed(2)}</p>
                             </div>
                             
-                            {/* 4. Available Amount (NEW) */}
+                            {/* 4. Available Amount (Cumulative Deposit - Monthly Expenses) */}
                             <div className={`p-3 rounded-lg ${summary.availableAmount >= 0 ? 'bg-blue-100' : 'bg-red-200'}`}>
                                 <p className="text-xs font-medium text-gray-500">Available Balance</p>
                                 <p className={`text-xl font-bold ${summary.availableAmount >= 0 ? 'text-blue-800' : 'text-red-800'}`}>
@@ -437,9 +407,9 @@ const Dashboard = ({
                                 </p>
                             </div>
                             
-                            {/* 5. Rate Per Meal (Modified to span 2 cols and be centered) */}
+                            {/* 5. Rate Per Meal (Monthly) */}
                             <div className="bg-indigo-100 p-3 rounded-lg col-span-full md:col-span-2 md:col-start-2">
-                                <p className="text-xs font-medium text-gray-500">Rate Per Meal</p>
+                                <p className="text-xs font-medium text-gray-500">Rate Per Meal (Monthly)</p>
                                 <p className="text-2xl font-extrabold text-indigo-800">Tk {summary.ratePerMeal}</p>
                             </div>
                         </div>
@@ -449,8 +419,8 @@ const Dashboard = ({
                         messData={messData} 
                         userId={userId} 
                         isAdmin={isAdmin} 
-                        currentWeekStart={currentWeekStart} 
-                        setCurrentWeekStart={setCurrentWeekStart} 
+                        currentMonthStart={currentMonthStart} // MODIFIED PROP
+                        setCurrentMonthStart={setCurrentMonthStart} // MODIFIED PROP
                         updateMealCount={updateMealCount} 
                     />
                 </div>
@@ -462,7 +432,8 @@ const Dashboard = ({
                         <h2 className="text-2xl font-bold text-gray-800 mb-4">Member Balances</h2>
                         <ul className="space-y-3">
                             {Object.entries(summary.memberSummaries).map(([name, memberSummary]) => {
-                                const isPositive = memberSummary.balance > 0; // Owes money
+                                // Positive balance means user OWES (Expense Share > Cumulative Deposit)
+                                const isPositive = memberSummary.balance > 0; 
                                 const balanceColor = isPositive ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50';
 
                                 return (
@@ -480,11 +451,12 @@ const Dashboard = ({
                         </ul>
                     </div>
 
-                    {/* Expense History */}
+                    {/* Expense History (Monthly Filtered) */}
                     <div className="bg-white p-5 rounded-xl shadow-lg">
-                        <h2 className="text-2xl font-bold text-gray-800 mb-4">Expense History</h2>
+                        <h2 className="text-2xl font-bold text-gray-800 mb-4">Expense History (This Month)</h2> {/* MODIFIED TITLE */}
                         <div className="max-h-96 overflow-y-auto space-y-3">
-                            {(messData?.expenses || []).slice().sort((a, b) => b.date - a.date).map(expense => (
+                            {/* NEW: Use the filtered monthlyExpenses from the summary */}
+                            {summary.monthlyExpenses.slice().sort((a, b) => b.date - a.date).map(expense => (
                                 <div key={expense.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
                                     <div className="flex justify-between items-center">
                                         <span className="text-base font-medium text-gray-900">{expense.description}</span>
