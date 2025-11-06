@@ -272,7 +272,8 @@ const MealEntryTable = ({ messData, userId, isAdmin, currentMonthStart, setCurre
                             const canEdit = isAdmin; 
                             return (
                                 <tr key={memberKey} className={isCurrentUser ? 'bg-indigo-50 hover:bg-indigo-100' : 'hover:bg-gray-50'}>
-                                    <td className="sticky left-0 bg-inherit px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900 border-r border-gray-200 z-10">
+                                    <td className={`sticky left-0 px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900 border-r border-gray-200 z-10 
+                                        ${isCurrentUser ? 'bg-indigo-50' : 'bg-white hover:bg-gray-50'}`}> 
                                         {member.name} {isCurrentUser && <span className="text-indigo-500 text-xs">(You)</span>}
                                     </td>
                                     {/* UPDATED: Data cells for all days */}
