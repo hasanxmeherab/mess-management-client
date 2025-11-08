@@ -1,16 +1,8 @@
 import React, { useState } from 'react';
-import { setDoc, runTransaction, getDoc } from 'firebase/firestore';
-import { generateMessId, generateJoinKey } from '../hooks/useMessManager'; 
+import { generateMessId, generateJoinKey } from '../utils/dateHelpers'; 
 
-const initialMessData = {
-    name: 'New Mess',
-    members: {},
-    expenses: [],
-    adminUid: '', 
-    joinKey: '',
-};
-
-const MessChooser = ({ db, userId, userName, setCurrentMessId, getMessRef, getMessMappingRef }) => {
+// Props changed: Removed db, getMessRef, getMessMappingRef
+const MessChooser = ({ userId, userName, setCurrentMessId, createMessApi, joinMessApi }) => {
     const [isJoining, setIsJoining] = useState(false);
     const [messIdInput, setMessIdInput] = useState('');
     const [joinKeyInput, setJoinKeyInput] = useState('');
@@ -27,31 +19,25 @@ const MessChooser = ({ db, userId, userName, setCurrentMessId, getMessRef, getMe
         const messName = messNameInput.trim() || `${userName}'s Mess`;
 
         try {
-            const messRef = getMessRef(newMessId);
-
-            // 1. Create the initial mess document (Public Data)
-            await setDoc(messRef, {
-                ...initialMessData,
-                name: messName,
-                adminUid: userId,
-                joinKey: newJoinKey,
-                members: {
-                    [userId]: {
-                        name: userName,
-                        deposit: 0,
-                        meals: {}
-                    }
+            // Data structure matches the server schema
+            const members = {
+                [userId]: {
+                    name: userName,
+                    deposit: 0,
+                    meals: {}
                 }
-            });
+            };
+            
+            // Call the new API function
+            await createMessApi(newMessId, messName, newJoinKey, members);
 
-            // 2. Write mess association to user's private document (Private Data)
-            const mappingRef = getMessMappingRef(userId);
-            await setDoc(mappingRef, { messId: newMessId, joinedAt: Date.now() });
-
+            // Store Mess ID locally (replaces Firestore mapping document)
+            localStorage.setItem('currentMessId', newMessId); 
             setCurrentMessId(newMessId);
+
         } catch (e) {
             console.error("Error creating mess:", e);
-            setError("Failed to create mess. Try again.");
+            setError(`Failed to create mess: ${e.message}`);
         } finally {
             setIsLoading(false);
         }
@@ -71,45 +57,16 @@ const MessChooser = ({ db, userId, userName, setCurrentMessId, getMessRef, getMe
         }
 
         try {
-            const messRef = getMessRef(messId);
-            const docSnap = await getDoc(messRef);
+            // Call the new API function for joining
+            await joinMessApi(messId, joinKey, 0); // Default deposit 0
 
-            if (!docSnap.exists()) {
-                setError("Mess ID not found.");
-                setIsLoading(false);
-                return;
-            }
-
-            const mess = docSnap.data();
-
-            if (mess.joinKey !== joinKey) {
-                setError("Invalid Join Key.");
-                setIsLoading(false);
-                return;
-            }
-
-            // 1. Successfully validated. Add the current user as a member (Public Data).
-            await runTransaction(db, async (transaction) => {
-                const currentData = (await transaction.get(messRef)).data();
-                
-                if (!currentData.members[userId]) {
-                    currentData.members[userId] = {
-                        name: userName,
-                        deposit: 0,
-                        meals: {}
-                    };
-                    transaction.update(messRef, { members: currentData.members });
-                }
-            });
-
-            // 2. Write mess association to user's private document (Private Data)
-            const mappingRef = getMessMappingRef(userId);
-            await setDoc(mappingRef, { messId: messId, joinedAt: Date.now() });
-
+            // Store Mess ID locally
+            localStorage.setItem('currentMessId', messId);
             setCurrentMessId(messId);
+
         } catch (e) {
             console.error("Error joining mess:", e);
-            setError("Failed to join mess. Check credentials or connection.");
+            setError(`Failed to join mess. ${e.message}`);
         } finally {
             setIsLoading(false);
         }

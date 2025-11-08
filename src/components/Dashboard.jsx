@@ -1,5 +1,4 @@
-import React, { useState, useMemo } from 'react';
-// MODIFIED: Import necessary helpers from the new utils file
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
     copyToClipboard, 
     formatDate, 
@@ -59,16 +58,46 @@ const MessInfoDisplay = ({ currentMessId, currentJoinKey, setCopyMessage }) => {
 };
 
 
-/** Modal for adding new expenses (Admin only). */
+/** MODIFIED: Modal for adding new expenses (Admin only) with multi-item support. */
 const ExpenseModal = ({ expenseModalOpen, setExpenseModalOpen, addExpense }) => {
-    const [description, setDescription] = useState('');
-    const [amount, setAmount] = useState('');
+    const [expenseItems, setExpenseItems] = useState([{ description: '', amount: '' }]);
 
-    const handleSubmit = () => {
-        if (description.trim() && parseFloat(amount) > 0) {
-            addExpense(description, amount);
-            setDescription('');
-            setAmount('');
+    const isAnyItemValid = expenseItems.some(item => 
+        item.description.trim() && parseFloat(item.amount) > 0
+    );
+
+    const handleItemChange = (index, field, value) => {
+        const newItems = [...expenseItems];
+        newItems[index][field] = value;
+        setExpenseItems(newItems);
+    };
+
+    const handleAddItem = () => {
+        setExpenseItems([...expenseItems, { description: '', amount: '' }]);
+    };
+
+    const handleRemoveItem = (index) => {
+        if (expenseItems.length > 1) {
+            const newItems = expenseItems.filter((_, i) => i !== index);
+            setExpenseItems(newItems);
+        } else if (expenseItems.length === 1) {
+            // Clear fields if only one item remains
+            setExpenseItems([{ description: '', amount: '' }]);
+        }
+    };
+
+    const handleBatchSubmit = async () => {
+        const validItems = expenseItems.filter(item => 
+            item.description.trim() && parseFloat(item.amount) > 0
+        );
+
+        if (validItems.length > 0) {
+            // Pass the array of valid items to the batch function in the hook
+            await addExpense(validItems); 
+
+            // Reset modal state and close
+            setExpenseItems([{ description: '', amount: '' }]);
+            setExpenseModalOpen(false);
         }
     };
 
@@ -76,33 +105,75 @@ const ExpenseModal = ({ expenseModalOpen, setExpenseModalOpen, addExpense }) => 
 
     return (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50">
-            <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md">
-                <h3 className="text-xl font-bold text-gray-800 mb-4">Add New Expense</h3>
+            <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                <h3 className="text-xl font-bold text-gray-800 mb-4">Add New Expenses (Batch)</h3>
+                
                 <div className="space-y-4">
-                    <input
-                        type="text"
-                        placeholder="Description (e.g., Groceries, Chicken)"
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                    <input
-                        type="number"
-                        placeholder="Amount (in local currency)"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                        min="0"
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                    <div className="flex justify-end space-x-3">
-                        <button onClick={() => setExpenseModalOpen(false)} className="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition">Cancel</button>
-                        <button onClick={handleSubmit} disabled={!description.trim() || !parseFloat(amount)} className="px-4 py-2 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700 transition disabled:opacity-50">Add Expense</button>
+                    {/* Map through expense items */}
+                    {expenseItems.map((item, index) => (
+                        <div key={index} className="flex space-x-2 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                            {/* Description Input */}
+                            <input
+                                type="text"
+                                placeholder={`Item ${index + 1} Description`}
+                                value={item.description}
+                                onChange={(e) => handleItemChange(index, 'description', e.target.value)}
+                                className="flex-grow p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                            />
+                            {/* Amount Input */}
+                            <input
+                                type="number"
+                                placeholder="Amount"
+                                value={item.amount}
+                                onChange={(e) => handleItemChange(index, 'amount', e.target.value)}
+                                min="0"
+                                className="w-24 p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                            />
+                            {/* Remove Button */}
+                            <button 
+                                onClick={() => handleRemoveItem(index)}
+                                className="p-2 text-red-500 hover:text-red-700 disabled:opacity-50"
+                                title="Remove Item"
+                                disabled={expenseItems.length === 1 && !item.description && !item.amount}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                    ))}
+                    
+                    {/* Add More Button */}
+                    <button
+                        onClick={handleAddItem}
+                        className="w-full py-2 border-2 border-indigo-300 border-dashed text-indigo-600 font-medium rounded-lg hover:bg-indigo-50 transition"
+                    >
+                        + Add Another Item
+                    </button>
+
+                    {/* Action Buttons */}
+                    <div className="flex justify-end space-x-3 pt-4">
+                        <button 
+                            onClick={() => {
+                                setExpenseModalOpen(false);
+                                setExpenseItems([{ description: '', amount: '' }]);
+                            }} 
+                            className="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            onClick={handleBatchSubmit} 
+                            disabled={!isAnyItemValid} 
+                            className="px-4 py-2 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700 transition disabled:opacity-50"
+                        >
+                            Submit ({expenseItems.filter(item => item.description.trim() && parseFloat(item.amount) > 0).length}) Expenses
+                        </button>
                     </div>
                 </div>
             </div>
         </div>
     );
 };
+
 
 /** Modal for adding deposits (Admin only). */
 const DepositModal = ({ depositModalOpen, setDepositModalOpen, addDeposit, messData, userId }) => {
@@ -113,6 +184,13 @@ const DepositModal = ({ depositModalOpen, setDepositModalOpen, addDeposit, messD
         uid,
         name: messData.members[uid]?.name || `User ${uid.substring(0, 4)}`,
     }));
+    
+    useEffect(() => {
+        if (depositModalOpen && userId && !targetUser) {
+            setTargetUser(userId);
+        }
+    }, [depositModalOpen, userId, targetUser]);
+
 
     const handleSubmit = () => {
         if (targetUser && parseFloat(amount) > 0) {
@@ -155,14 +233,13 @@ const DepositModal = ({ depositModalOpen, setDepositModalOpen, addDeposit, messD
     );
 };
 
-// MODIFIED: Renamed and updated for MONTHLY view
+
+/** Meal Entry Table */
 const MealEntryTable = ({ messData, userId, isAdmin, currentMonthStart, setCurrentMonthStart, updateMealCount }) => {
     
-    // NEW: Calculate all days in the current month
     const daysInMonth = useMemo(() => {
         const days = [];
         const current = new Date(currentMonthStart);
-        // Date trick: Setting day 0 of the next month gives you the last day of the current month
         const lastDay = new Date(current.getFullYear(), current.getMonth() + 1, 0).getDate(); 
         
         for (let i = 1; i <= lastDay; i++) {
@@ -183,20 +260,17 @@ const MealEntryTable = ({ messData, userId, isAdmin, currentMonthStart, setCurre
     const currentDateStr = formatDate(new Date());
     const MEAL_TYPES = ['B', 'L', 'D'];
 
-    // --- ADDED: Color Cycle for alternating day columns ---
     const COLOR_CYCLE = [
-        'bg-teal-100', // for Mon
-        'bg-teal-50',  // for Tue
+        'bg-teal-100',
+        'bg-teal-50',
     ];
     
     const navigateMonth = (offset) => {
         const newDate = new Date(currentMonthStart);
         newDate.setMonth(newDate.getMonth() + offset);
-        // Important: Use getStartOfMonth to reset the date to the first day 
         setCurrentMonthStart(getStartOfMonth(newDate)); 
     };
     
-    // Header for the Month
     const monthHeader = currentMonthStart.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
 
     if (membersToDisplay.length === 0) {
@@ -226,11 +300,9 @@ const MealEntryTable = ({ messData, userId, isAdmin, currentMonthStart, setCurre
                     <thead className="bg-gray-50 sticky top-0 z-20">
                         <tr>
                             <th className="sticky left-0 bg-gray-50 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider z-30 min-w-[120px] border-r border-gray-300">Member</th>
-                            {/* UPDATED: Iterate through all days in the month */}
                             {daysInMonth.map((date, i) => {
                                 const dateStr = formatDate(date);
                                 const isToday = dateStr === currentDateStr;
-                                const colorIndex = date.getDay() % 2; // 0=Sun, 1=Mon, etc. (using simple alternating color for now)
                                 
                                 return (
                                     <th key={dateStr} colSpan={3}
@@ -248,7 +320,6 @@ const MealEntryTable = ({ messData, userId, isAdmin, currentMonthStart, setCurre
                         </tr>
                         <tr>
                             <th className="sticky left-0 bg-gray-50 border-r border-gray-300 z-30"></th>
-                            {/* UPDATED: B, L, D headers for all days */}
                             {daysInMonth.map((date, i) =>
                                 MEAL_TYPES.map((type, index) => (
                                     <th key={`${formatDate(date)}_${type}`}
@@ -276,7 +347,6 @@ const MealEntryTable = ({ messData, userId, isAdmin, currentMonthStart, setCurre
                                         ${isCurrentUser ? 'bg-indigo-50' : 'bg-white hover:bg-gray-50'}`}> 
                                         {member.name} {isCurrentUser && <span className="text-indigo-500 text-xs">(You)</span>}
                                     </td>
-                                    {/* UPDATED: Data cells for all days */}
                                     {daysInMonth.map((date, i) =>
                                         MEAL_TYPES.map(type => {
                                             const dateKey = `${formatDate(date)}_${type}`;
@@ -319,14 +389,12 @@ const Dashboard = ({
     
     const { 
         auth, signOut, userId, userName, messData, isAdmin, calculatedSummary, 
-        currentMessName, currentJoinKey, currentMonthStart, setCurrentMonthStart, // MODIFIED
+        currentMessName, currentJoinKey, currentMonthStart, setCurrentMonthStart, 
         updateMealCount, expenseModalOpen, setExpenseModalOpen, addExpense,
         depositModalOpen, setDepositModalOpen, addDeposit, setCopyMessage,
-        currentMessId,
-        setCurrentMessId
+        currentMessId, setCurrentMessId
     } = state;
     
-    // Default the summary values to zero if calculatedSummary is undefined 
     const summary = calculatedSummary || { 
         totalExpenses: 0, 
         totalMeals: 0, 
@@ -334,8 +402,9 @@ const Dashboard = ({
         totalDeposited: 0, 
         availableAmount: 0, 
         memberSummaries: {},
-        monthlyExpenses: [] // NEW: Default for monthly expenses
+        monthlyExpenses: []
     };
+    
 
     // --- Main Dashboard Render ---
     return (
@@ -370,6 +439,10 @@ const Dashboard = ({
                             <button onClick={() => setDepositModalOpen(true)} className="flex-1 min-w-[150px] px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition">
                                 Add Deposit
                             </button>
+                            {/* Placeholder for Settlement/History button */}
+                            <button className="flex-1 min-w-[150px] px-4 py-2 bg-gray-400 text-white font-semibold rounded-lg shadow-md transition disabled:opacity-75 cursor-not-allowed">
+                                Settlement (Coming Soon)
+                            </button>
                         </>
                     )}
                 </div>
@@ -379,24 +452,24 @@ const Dashboard = ({
                 {/* Global Summary Panel and Meal Entry */}
                 <div className="lg:col-span-2 space-y-6">
                     <div className="bg-white p-5 rounded-xl shadow-lg">
-                        <h2 className="text-2xl font-bold text-gray-800 mb-4">Monthly Summary</h2> {/* MODIFIED TITLE */}
+                        <h2 className="text-2xl font-bold text-gray-800 mb-4">Monthly Summary</h2> 
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                             
                             {/* 1. Total Expenses (Monthly) */}
                             <div className="bg-red-50 p-3 rounded-lg">
-                                <p className="text-xs font-medium text-gray-500">Monthly Expenses</p> {/* MODIFIED LABEL */}
+                                <p className="text-xs font-medium text-gray-500">Monthly Expenses</p>
                                 <p className="text-xl font-bold text-red-700">Tk {summary.totalExpenses.toFixed(2)}</p>
                             </div>
                             
                             {/* 2. Total Meals (Monthly) */}
                             <div className="bg-indigo-50 p-3 rounded-lg">
-                                <p className="text-xs font-medium text-gray-500">Monthly Meals</p> {/* MODIFIED LABEL */}
+                                <p className="text-xs font-medium text-gray-500">Monthly Meals</p>
                                 <p className="text-xl font-bold text-indigo-700">{summary.totalMeals}</p>
                             </div>
                             
                             {/* 3. Total Deposits (Cumulative) */}
                             <div className="bg-green-50 p-3 rounded-lg">
-                                <p className="text-xs font-medium text-gray-500">Total Deposits (Cumulative)</p> {/* CLARIFIED LABEL */}
+                                <p className="text-xs font-medium text-gray-500">Total Deposits (Cumulative)</p> 
                                 <p className="text-xl font-bold text-green-700">Tk {summary.totalDeposited.toFixed(2)}</p>
                             </div>
                             
@@ -420,8 +493,8 @@ const Dashboard = ({
                         messData={messData} 
                         userId={userId} 
                         isAdmin={isAdmin} 
-                        currentMonthStart={currentMonthStart} // MODIFIED PROP
-                        setCurrentMonthStart={setCurrentMonthStart} // MODIFIED PROP
+                        currentMonthStart={currentMonthStart} 
+                        setCurrentMonthStart={setCurrentMonthStart} 
                         updateMealCount={updateMealCount} 
                     />
                 </div>
@@ -432,14 +505,14 @@ const Dashboard = ({
                     <div className="bg-white p-5 rounded-xl shadow-lg">
                         <h2 className="text-2xl font-bold text-gray-800 mb-4">Member Balances</h2>
                         <ul className="space-y-3">
-                            {Object.entries(summary.memberSummaries).map(([name, memberSummary]) => {
-                                // Positive balance means user OWES (Expense Share > Cumulative Deposit)
+                            {/* Iterating over the summary objects which contain the name */}
+                            {Object.values(summary.memberSummaries).map((memberSummary) => {
                                 const isPositive = memberSummary.balance > 0; 
                                 const balanceColor = isPositive ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50';
 
                                 return (
-                                    <li key={name} className="flex justify-between items-center p-3 rounded-lg border border-gray-100">
-                                        <div className="text-sm font-medium text-gray-900">{name}</div>
+                                    <li key={memberSummary.name} className="flex justify-between items-center p-3 rounded-lg border border-gray-100">
+                                        <div className="text-sm font-medium text-gray-900">{memberSummary.name}</div>
                                         <div className="text-right">
                                             <p className="text-xs text-gray-500">Deposit: Tk {memberSummary.deposit.toFixed(2)}</p>
                                             <p className={`text-lg font-bold ${balanceColor} px-2 rounded-full`}>
@@ -454,9 +527,8 @@ const Dashboard = ({
 
                     {/* Expense History (Monthly Filtered) */}
                     <div className="bg-white p-5 rounded-xl shadow-lg">
-                        <h2 className="text-2xl font-bold text-gray-800 mb-4">Expense History (This Month)</h2> {/* MODIFIED TITLE */}
+                        <h2 className="text-2xl font-bold text-gray-800 mb-4">Expense History (Current Month)</h2>
                         <div className="max-h-96 overflow-y-auto space-y-3">
-                            {/* NEW: Use the filtered monthlyExpenses from the summary */}
                             {summary.monthlyExpenses.slice().sort((a, b) => b.date - a.date).map(expense => (
                                 <div key={expense.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
                                     <div className="flex justify-between items-center">
@@ -486,7 +558,6 @@ const Dashboard = ({
                 messData={messData}
                 userId={userId}
             />
-
         </div>
     );
 };
