@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { generateMessId, generateJoinKey } from '../utils/dateHelpers'; 
 
-// Props changed: Removed db, getMessRef, getMessMappingRef
 const MessChooser = ({ userId, userName, setCurrentMessId, createMessApi, joinMessApi }) => {
     const [isJoining, setIsJoining] = useState(false);
     const [messIdInput, setMessIdInput] = useState('');
