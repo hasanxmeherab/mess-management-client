@@ -59,7 +59,7 @@ const MessChooser = ({ userId, userName, setCurrentMessId, createMessApi, joinMe
             // Call the new API function for joining
             await joinMessApi(messId, joinKey, 0); // Default deposit 0
 
-            // Store Mess ID locally
+            // Store Mess ID locally............
             localStorage.setItem('currentMessId', messId);
             setCurrentMessId(messId);
 
